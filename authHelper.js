@@ -19,8 +19,9 @@ const oauth2 = require("simple-oauth2").create(credentials);
 const redirectUri = "http://localhost:1337/authorize";
 
 const scopes = [
-  "openid",
-  "https://outlook.office.com/mail.read"
+  'openid',
+  'offline_access',
+  'https://outlook.office.com/mail.read'
 ];
 
 function getAuthUrl() {
@@ -51,5 +52,11 @@ function getTokenFromCode(authCode, callback, response) {
   });
 }
 
+function refreshAccessToken(refreshToken, callback) {
+  let tokenObj = oauth2.accessToken.create({refresh_token: refreshToken});
+  tokenObj.refresh(callback);
+}
+
 exports.getAuthUrl = getAuthUrl;
 exports.getTokenFromCode = getTokenFromCode;
+exports.refreshAccessToken = refreshAccessToken;

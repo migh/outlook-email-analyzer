@@ -6,6 +6,15 @@ const router = require("./router");
 const authHelper = require("./authHelper");
 const outlook = require("node-outlook");
 
+function getValueFromCookie(valueName, cookie){
+  if (cookie.indexOf(valueName) !== -1) {
+    let start = cookie.indexOf(valueName) + valueName.length + 1;
+    let end = cookie.indexOf(';', start);
+    end = end === -1 ? cookie.length : end;
+    return cookie.substring(start, end);
+  }
+}
+
 function getUserEmail(token, callback) {
   outlook.base.setApiEndpoint('https://outlook.office.com/api/v2.0');
 
@@ -20,6 +29,34 @@ function getUserEmail(token, callback) {
       callback(null, user.EmailAddress);
     }
   });
+}
+
+function getAccessToken(req, res, callback) {
+  let expiration = new Date( parseFloat( getValueFromCookie('outlook-news-token-expires', req.headers.cookie) ) );
+
+  if (expiration <= new Date()) {
+    console.log('TOKEN EXPIRED, REFRESHING');
+
+    let refreshToken = getValueFromCookie('outlook-news-refresh-token', req.headers.cookie);
+    authHelper.refreshAccessToken(refreshToken, function(error, newToken) {
+
+      if (error) {
+        callback(error, null);
+      } else if (newToken) {
+        let cookies = [
+	  'outlook-news-token=' + newToken.token.access_token + ';Max-Age=4000',
+	  'outlook-news-refresh-token=' + newToken.token.refresh_token + ';Max-Age=4000',
+	  'outlook-news-token-expires=' + newToken.token.expires_at.getTime() + ';Max-Age=4000',
+	];
+
+        res.setHeader('Set-Cookie', cookies);
+        callback(null, newToken.token.access_token);
+      }
+
+    });
+  } else {
+    callback(null, getValueFromCookie('outlook-news-token', req.headers.cookie) );
+  }
 }
 
 function tokenReceived(res, error, token) {
@@ -43,11 +80,15 @@ function tokenReceived(res, error, token) {
         res.end();
 
       } else if (email) {
-        let page = `<p>Email: ${email}</p>
-        <p>Access token: ${token.token.access_token}</p>`;
+        let cookies = [
+	  'outlook-news-token=' + token.token.access_token + ';Max-Age=4000',
+	  'outlook-news-refresh-token=' + token.token.refresh_token + ';Max-Age=4000',
+	  'outlook-news-token-expires=' + token.token.expires_at.getTime() + ';Max-Age=4000',
+	  'outlook-news-email=' + email + ';Max-Age=4000'
+	];
 
-        res.writeHead(200, {"Content-Type": "text/html"});
-        res.write(page);
+        res.setHeader('Set-Cookie', cookies);
+        res.writeHead(302, {'Location': 'http://localhost:1337/mail'});
         res.end();
       }
     });
@@ -75,6 +116,23 @@ handle["/authorize"] = function (res, req) {
   console.log("Code: " + code);
 
   authHelper.getTokenFromCode(code, tokenReceived, res);
+};
+
+handle["/mail"] = function(res, req) {
+  getAccessToken(req, res, function(error, token) {
+    console.log('Token found in cookie: ', token);
+    var email = getValueFromCookie('outlook-news-email', req.headers.cookie);
+    console.log('Email found in cookie: ', email);
+    if (token) {
+      res.writeHead(200, {'Content-Type': 'text/html'});
+      res.write('<p>Token retrieved from cookie: ' + token + '</p>');
+      res.end();
+    } else {
+      res.writeHead(200, {'Content-Type': 'text/html'});
+      res.write('<p> No token found in cookie!</p>');
+      res.end();
+    }
+  });
 };
 
 server.start(router.route, handle);
