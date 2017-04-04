@@ -124,9 +124,53 @@ handle["/mail"] = function(res, req) {
     var email = getValueFromCookie('outlook-news-email', req.headers.cookie);
     console.log('Email found in cookie: ', email);
     if (token) {
-      res.writeHead(200, {'Content-Type': 'text/html'});
-      res.write('<p>Token retrieved from cookie: ' + token + '</p>');
-      res.end();
+      
+      let query = {
+        '$select': 'Subject, ReceivedDateTime, From',
+	'$orderby': 'ReceivedDateTime',
+	'$top': 15
+      };
+
+      outlook.base.setApiEndpoint('https://outlook.office.com/api/v2.0');
+      outlook.base.setAnchorMailbox(email);
+
+      outlook.mail.getMessages({token: token, odataParams: query}, function(error, result){
+        let page = '';
+	
+	res.writeHead(200, {'Content-Type': 'text/html'});
+        
+	if (error) {
+          console.log("getMessages returned an error:" + error);
+
+          page = `<p>ERROR: ${error}</p>`;
+	} else if (result) {
+          console.log("getMessages returned " + result.value.length + ' messages.');
+          
+	  page = `<div><h1>Your inbox</h1></div>
+	  <table>
+	    <tr>
+	      <th>From</th>
+	      <th>Subject</th>
+	      <th>Received</th>
+	    </tr>`;
+
+	  result.value.forEach(function(message) {
+	    console.log('  Subject: ' + message.Subject);
+
+	    let from  = message.From ? message.From.EmailAddress.Name : 'NONE';
+	    page += `<tr>
+	      <td>${from}</td>
+	      <td>${message.Subject}</td>
+	      <td>${messge.ReceivedDateTime.toString()}</td>
+	    </tr>`;
+	  });
+
+	  page += '</table>';
+	}
+        res.write(page);
+        res.end();
+
+      });
     } else {
       res.writeHead(200, {'Content-Type': 'text/html'});
       res.write('<p> No token found in cookie!</p>');
